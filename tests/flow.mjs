@@ -32,3 +32,11 @@ for(let round=0;round<5;round++){
 }
 assert.equal(largeState.champion,'Entry 17');assert.equal(largeState.total,31);
 console.log('PASS: 32 contenders, independent 16-entry halves, five rounds, cross-side final, and champion.');
+const {starterKits}=await import('../lib/starter-kits.ts');
+for(const kit of starterKits){
+ const created=await call('host','/api/brackets',kit,201);
+ assert.equal(created.title,kit.title);
+ assert.equal(created.rounds[0].length*2,kit.entries.length);
+ assert.deepEqual(created.rounds[0].flatMap(m=>[m.a,m.b]),kit.entries);
+}
+console.log('PASS: every starter kit creates a valid bracket with its exact title and contenders.');
