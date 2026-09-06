@@ -1,80 +1,208 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { starterKits } from '@/lib/starter-kits';
-import { Trophy, GitFork, ArrowRight, Shuffle, Plus, Link2, Check, Users, LockKeyhole } from 'lucide-react';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+/* oxlint-disable next/no-html-link-for-pages */
 
-type Match = { a: string; b: string; votes: number[]; pick?: number; winner?: string };
-type Bracket = { id: string; title: string; description: string; rounds: Match[][]; current: number; owner: boolean; champion?: string; total: number };
+import { useEffect, useState } from 'react';
+import { ArrowRight, GitFork, Link2, LockKeyhole, Plus, Shuffle, Users } from 'lucide-react';
+import { BracketBoard, type BracketView, roundName } from '@/components/bracket-board';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { starterKits } from '@/lib/starter-kits';
+
 const examples = ['The Office', 'Friends', 'Brooklyn Nine-Nine', 'Parks and Recreation', 'Seinfeld', 'Modern Family', 'Community', 'New Girl'];
-const roundName = (n: number) => n === 1 ? 'Final' : n === 2 ? 'Semifinals' : n === 4 ? 'Quarterfinals' : n === 8 ? 'Round of 16' : 'Round of 32';
-export default function Home() {
- const [title,setTitle]=useState('The ultimate sitcom showdown');
- const [description,setDescription]=useState('Eight iconic shows. One group chat. Settle the debate.');
- const [entries,setEntries]=useState(examples); const [game,setGame]=useState<Bracket|null>(null);
- const [busy,setBusy]=useState(false); const [message,setMessage]=useState(''); const [share,setShare]=useState(false); const [close,setClose]=useState(false); const [loading,setLoading]=useState(false);
- const [shareUrl,setShareUrl]=useState('');
- const [kitId,setKitId]=useState('movies32');
- const [mobileRound,setMobileRound]=useState<number|null>(null);
- const [mobileSide,setMobileSide]=useState<'left'|'right'>('left');
- function applyKit(){const kit=starterKits.find(k=>k.id===kitId);if(!kit)return;setTitle(kit.title);setDescription(kit.description);setEntries([...kit.entries]);setMessage('Starter kit loaded. Edit any contender or shuffle before creating your bracket.');}
- useEffect(()=>{
-  const ctx=(document as Document & {modelContext?:{registerTool:(tool:unknown,options:unknown)=>void|Promise<void>}}).modelContext;
-  if(!ctx?.registerTool)return;const lifecycle=new AbortController();
-  Promise.resolve(ctx.registerTool({name:'configure_bracket',title:'Configure a bracket',description:'Fill the bracket builder with a title and 4, 8, 16, or 32 unique contenders. This prepares the preview; it does not create or publish a bracket.',inputSchema:{type:'object',properties:{title:{type:'string',maxLength:80},entries:{type:'array',items:{type:'string',maxLength:60},minItems:4,maxItems:32}},required:['title','entries'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input:unknown){const v=input as {title:string;entries:string[]};if(!v||typeof v.title!=='string'||!v.title.trim()||v.title.length>80||!Array.isArray(v.entries)||![4,8,16,32].includes(v.entries.length)||v.entries.some(x=>typeof x!=='string'||!x.trim()||x.length>60)||new Set(v.entries.map(x=>x.trim().toLowerCase())).size!==v.entries.length)throw new Error('Provide a title and 4, 8, 16, or 32 unique contender names.');if(new URLSearchParams(location.search).has('b'))throw new Error('Open the bracket builder before configuring a new bracket.');setTitle(v.title.trim());setEntries(v.entries.map(x=>x.trim()));return {configured:true,contenders:v.entries.length};}},{signal:lifecycle.signal})).catch(()=>{});return()=>lifecycle.abort();
- },[]);
- async function api(path:string, data?:unknown) {const r=await fetch(path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined}); const json=await r.json() as Bracket & {error?:string}; if(!r.ok)throw new Error(json.error||'Something went wrong. Please try again.'); return json;}
- async function refresh(id:string){const g=await api('/api/brackets/'+encodeURIComponent(id));setGame(g);return g;}
- useEffect(()=>{const id=new URLSearchParams(location.search).get('b');if(id){setLoading(true);refresh(id).catch(e=>setMessage(e.message)).finally(()=>setLoading(false));}},[]);
- useEffect(()=>{if(!game)return;const timer=setInterval(()=>refresh(game.id).catch(()=>{}),8000);return()=>clearInterval(timer);},[game?.id]);
- async function create(){setBusy(true);setMessage('');try{const g=await api('/api/brackets',{title,description,entries});setGame(g);history.pushState({},'', '?b='+g.id);setShareUrl(location.href);setShare(true);}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
- async function vote(match:number,pick:number){if(!game||busy)return;setBusy(true);setMessage('');try{setGame(await api('/api/brackets/'+game.id,{action:'vote',round:game.current,match,pick}));}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
- async function advance(){if(!game)return;setBusy(true);setMessage('');try{setGame(await api('/api/brackets/'+game.id,{action:'advance',round:game.current}));setClose(false);}catch(e){setMessage((e as Error).message);setClose(false);}finally{setBusy(false);}}
- function resize(n:number){setEntries(Array.from({length:n},(_,i)=>entries[i]??''));}
- function shuffle(){setEntries(old=>{const a=[...old];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;});}
- const initial:Match[]=Array.from({length:entries.length/2},(_,i)=>({a:entries[i*2]||'Entry '+(i*2+1),b:entries[i*2+1]||'Entry '+(i*2+2),votes:[0,0]}));
- const rounds=game?game.rounds:[initial]; const size=rounds[0].length*2; const numRounds=Math.log2(size);
- const shownRound=Math.min(mobileRound??game?.current??0,numRounds-1);
- useEffect(()=>{setMobileRound(null);},[game?.current,size]);
- function renderRound(r:number, side?:'left'|'right'){const total=size/2**(r+1);const count=side?total/2:total;const offset=side==='right'?count:0;return <div className={"round-column "+(side||"")} key={(side||"")+r}><div className={'round-heading '+(game?.current===r?'active':'')}><span>{roundName(total)}</span><small>{String(r+1).padStart(2,'0')}</small></div><div className="match-stack">{Array.from({length:count},(_,localIndex)=>{const m=localIndex+offset;const match=rounds[r]?.[m];const active=!!game&&r===game.current&&!game.champion;return <div className={'match '+(!match?'pending':'')} key={m}>{[0,1].map(p=>{const name=match?(p===0?match.a:match.b):'Awaiting winner';return <button className={'contender '+(match?.pick===p?'picked ':'')+(match?.winner===name?'won':'')} key={p} disabled={!active||busy} onClick={()=>vote(m,p)} aria-label={active?'Vote for '+name:undefined}><span className="seed">{r===0?m*2+p+1:<GitFork size={13}/>}</span><span className="contender-name">{name}</span>{game&&match?<span className="vote-count">{match.pick===p&&<Check size={12}/>} {match.votes[p]}</span>:<span className="empty-dot"/>}</button>})}{active&&<span className="match-note">{match?.pick!==undefined?'Your vote is in':'Tap to vote'}</span>}</div>})}</div></div>;}
- return <div className="app-shell">
-  <header className="topbar"><a className="brand" href="/"><span className="brand-symbol"><GitFork size={22}/></span>bracket<span className="brand-light">club</span><span className="brand-dot">®</span></a><span className="top-caption">A little competition. A lot of opinions.</span><button className="secondary small" onClick={()=>{location.href='/'}}><Plus size={16}/> New bracket</button></header>
-  <main><div className="breadcrumb"><span>YOUR NEXT GREAT DEBATE</span><span> / </span><span>{game?'THE BRACKET':'BRACKET BUILDER'}</span></div>
-  <div className="page-heading"><div><h1>{game ? game.title : 'Big opinions. One winner.'}</h1><p>{game?game.description:'Pick the contenders. Rally your friends. Let the best one win.'}</p></div><span className="edition"><GitFork size={16}/> {game?'VOTING ROOM':'MAKE IT A MATCH'}</span></div>
-  {message&&<div className="notice" role="status">{message}<button aria-label="Dismiss message" onClick={()=>setMessage('')}>×</button></div>}
-  {loading?<div className="loading">Opening your bracket…</div>:<div className={"workspace "+(game?"voting-workspace":"")}>
-   <aside className="editor">
-    <div className="editor-header"><span className="step-number">{game?<Users size={18}/>:'01'}</span><h2>{game?'The voting room':'Build your bracket'}</h2></div>
-    {game?<div className="room-info"><span className="status-pill"><i/>{game.champion?'COMPLETE':'VOTING IS OPEN'}</span><h3>{game.champion?'We have a winner.':roundName(size/2**(game.current+1))}</h3><p>{game.champion?'The votes are in. Your group has crowned a champion.':'Choose your favorite in each matchup. You can change your vote until the host closes the round.'}</p><div className="room-stat"><strong>{game.total}</strong><span>votes across all rounds</span></div><button className="primary" onClick={()=>{setShareUrl(location.origin+'/?b='+game.id);setShare(true);}}><Link2 size={18}/> Invite friends</button>{game.owner&&!game.champion&&<button className="secondary" onClick={()=>setClose(true)}>Close round & advance <ArrowRight size={16}/></button>}<div className="tip"><LockKeyhole size={18}/><p>{game.owner?'You’re the host on this browser. Close each round when everyone has voted.':'The host closes each round and advances the winners.'}</p></div><a className="text-link" href="/"><Plus size={16}/> Create your own bracket</a></div>:<>
-    <div className="starter-kit"><label className="field-label">Start with a kit <span>optional</span></label><Select value={kitId} onValueChange={v=>{if(v)setKitId(v);}}><SelectTrigger className="size-select" aria-label="Starter kit"><SelectValue/></SelectTrigger><SelectContent>{starterKits.map(k=><SelectItem key={k.id} value={k.id}>{k.label}</SelectItem>)}</SelectContent></Select><button className="secondary" onClick={applyKit}>Use this kit <ArrowRight size={16}/></button><p>Fills the title, size, and contenders. You can edit everything afterward.</p></div>
-    <label className="field-label" htmlFor="title">Bracket title</label><input id="title" maxLength={80} value={title} onChange={e=>setTitle(e.target.value)} placeholder="What are we deciding?"/>
-    <label className="field-label" htmlFor="description">A little context <span>optional</span></label><textarea id="description" maxLength={200} rows={2} value={description} onChange={e=>setDescription(e.target.value)} placeholder="Give your friends the backstory"/>
-    <div className="field-label">Bracket size</div><Select value={String(entries.length)} onValueChange={v=>resize(Number(v))}><SelectTrigger className="size-select" aria-label="Bracket size"><SelectValue/></SelectTrigger><SelectContent>{[4,8,16,32].map(n=><SelectItem key={n} value={String(n)}>{n} contenders</SelectItem>)}</SelectContent></Select>
-    <div className="entries-heading"><label className="field-label">The contenders <span>{entries.filter(x=>x.trim()).length}/{entries.length}</span></label><button className="text-link" onClick={shuffle}><Shuffle size={14}/> Shuffle</button></div>
-    <div className="entry-list">{entries.map((entry,i)=><div className="entry-field" key={i}><span>{String(i+1).padStart(2,'0')}</span><input aria-label={'Contender '+(i+1)} maxLength={60} value={entry} placeholder={'Contender '+(i+1)} onChange={e=>setEntries(entries.map((v,j)=>j===i?e.target.value:v))}/></div>)}</div>
-    <p className="editor-hint">{entries.length===32?"Entries 1–16 start on the left; 17–32 start on the right.":"Neighbors face off in the first round."}</p><button className="primary" disabled={busy||!title.trim()||entries.some(x=>!x.trim())} onClick={create}>{busy?'Creating…':'Create & invite friends'}<ArrowRight size={18}/></button><p className="under-button">Your bracket goes live when you create it.</p>
-    </>}
-   </aside>
-   <section className="board-panel" aria-label="Tournament bracket"><div className="board-top"><div><span className={'status-pill '+(!game?'draft':'')}><i/>{game?(game.champion?'CHAMPION CROWNED':'LIVE BRACKET'):'LIVE PREVIEW'}</span><h2>{game?'The road to a winner':title||'Your bracket'}</h2></div><div className="board-count">{size} contenders<span>·</span>{numRounds} rounds<span>·</span>1 champion</div></div>
-    <div className="mobile-bracket">
-     <div className="mobile-round-controls"><label className="field-label">View round</label><Select value={String(shownRound)} onValueChange={v=>{if(v!==null)setMobileRound(Number(v));}}><SelectTrigger className="size-select" aria-label="View bracket round"><SelectValue/></SelectTrigger><SelectContent>{Array.from({length:numRounds},(_,r)=><SelectItem key={r} value={String(r)}>{roundName(size/2**(r+1))}{game?.current===r&&!game.champion?' · Voting open':''}</SelectItem>)}</SelectContent></Select>
-     {size===32&&shownRound<4&&<><label className="field-label">Bracket side</label><Select value={mobileSide} onValueChange={v=>{if(v==='left'||v==='right')setMobileSide(v);}}><SelectTrigger className="size-select" aria-label="View bracket side"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="left">Left · Entries 1–16</SelectItem><SelectItem value="right">Right · Entries 17–32</SelectItem></SelectContent></Select></>}
-     </div>
-     {renderRound(shownRound,size===32&&shownRound<4?mobileSide:undefined)}
-     {game&&shownRound!==game.current&&!game.champion&&<button className="secondary" onClick={()=>setMobileRound(null)}>Go to open voting <ArrowRight size={16}/></button>}
-     {game?.champion&&<div className="mobile-champion"><Trophy size={28}/><span>Champion</span><strong>{game.champion}</strong></div>}
-    </div>
-    {size===32&&<div className="split-guide"><span>LEFT SIDE · ENTRIES 1–16</span><span>Final in the center · Scroll to explore both sides</span><span>RIGHT SIDE · ENTRIES 17–32</span></div>}<div className="bracket-scroll" tabIndex={0} aria-label="Scrollable tournament board"><div className={"bracket-grid "+(size===32?"split-bracket":"")} style={size===32?{gridTemplateColumns:"repeat(4,minmax(185px,1fr)) 210px repeat(4,minmax(185px,1fr))",minWidth:2114}:{gridTemplateColumns:`repeat(${numRounds}, minmax(185px,1fr)) 150px`,minWidth:numRounds*220+150}}>
-     {size===32?<>{[0,1,2,3].map(r=>renderRound(r,'left'))}<div className="center-final">{renderRound(4)}<div className="champion-column"><div className="round-heading"><span>Champion</span></div><div className={'champion '+(game?.champion?'crowned':'')}><div className="trophy-circle"><Trophy size={32} strokeWidth={1.5}/></div><span className="champion-label">THE LAST ONE STANDING</span><strong>{game?.champion||'Only one takes it.'}</strong><p>{game?.champion?'Chosen by your people.':'Your group decides.'}</p></div></div></div>{[3,2,1,0].map(r=>renderRound(r,'right'))}</>:<>{Array.from({length:numRounds},(_,r)=>renderRound(r))}<div className="champion-column"><div className="round-heading"><span>Champion</span></div><div className={'champion '+(game?.champion?'crowned':'')}><div className="trophy-circle"><Trophy size={32} strokeWidth={1.5}/></div><span className="champion-label">THE LAST ONE STANDING</span><strong>{game?.champion||'Only one takes it.'}</strong><p>{game?.champion?'Chosen by your people.':'Your group decides.'}</p></div></div></>}
-    </div></div><div className="board-footer"><span><span className="legend-dot"/>{game?'Votes refresh automatically':'First-round matchups'}</span><span>{game?'One vote per matchup, per browser':'Winners advance each round'} <ArrowRight size={14}/></span></div>
-   </section>
-  </div>}
-  <div className="bottom-note"><span><GitFork size={17}/> Built for the group chat.</span><p>{game?'Every vote brings you closer to a champion.':'Anything can be a bracket. Just bring your opinions.'}</p><span>LET THE DEBATE BEGIN ↗</span></div>
-  </main>
-  <Dialog open={share} onOpenChange={setShare}><DialogContent className="share-dialog"><div className="dialog-icon"><Link2/></div><DialogTitle>Bring the group chat.</DialogTitle><DialogDescription>Send this voting link to your friends. You control when each round ends from this browser.</DialogDescription><input aria-label="Voting link" readOnly value={shareUrl} onFocus={e=>e.target.select()}/><button className="primary" onClick={async()=>{try{await navigator.clipboard.writeText(shareUrl);setMessage('Voting link copied!');setShare(false);}catch{setMessage('Select and copy the voting link.');}}}>Copy voting link <Link2 size={16}/></button></DialogContent></Dialog>
-  <Dialog open={close} onOpenChange={setClose}><DialogContent><DialogTitle>Close this round?</DialogTitle><DialogDescription>Voting for this round will end. The most-voted contender in each matchup advances. Ties must be broken with more votes before you can advance. This cannot be undone.</DialogDescription><button className="primary" disabled={busy} onClick={advance}>{busy?'Advancing…':'Close round & advance'}</button><button className="secondary" onClick={()=>setClose(false)}>Keep voting</button></DialogContent></Dialog>
- </div>;
+
+async function requestBracket(path: string, data?: unknown) {
+  const response = await fetch(path, { method: data ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: data ? JSON.stringify(data) : undefined });
+  const result = await response.json() as BracketView & { error?: string };
+  if (!response.ok) throw new Error(result.error || 'Something went wrong. Please try again.');
+  return result;
 }
 
+export default function Home() {
+  const [title, setTitle] = useState('The ultimate sitcom showdown');
+  const [description, setDescription] = useState('Eight iconic shows. One group chat. Settle the debate.');
+  const [entries, setEntries] = useState(examples);
+  const [game, setGame] = useState<BracketView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [share, setShare] = useState(false);
+  const [close, setClose] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [kitId, setKitId] = useState('movies32');
+  const gameId = game?.id;
 
+  useEffect(() => {
+    const context = (document as Document & { modelContext?: { registerTool: (tool: unknown, options: unknown) => void | Promise<void> } }).modelContext;
+    if (!context?.registerTool) return;
+    const lifecycle = new AbortController();
+    Promise.resolve(context.registerTool({
+      name: 'configure_bracket',
+      title: 'Configure a bracket',
+      description: 'Fill the bracket builder with a title and 4, 8, 16, or 32 unique contenders. This prepares the preview; it does not create or publish a bracket.',
+      inputSchema: { type: 'object', properties: { title: { type: 'string', maxLength: 80 }, entries: { type: 'array', items: { type: 'string', maxLength: 60 }, minItems: 4, maxItems: 32 } }, required: ['title', 'entries'], additionalProperties: false },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      execute(input: unknown) {
+        const value = input as { title: string; entries: string[] };
+        const valid = value && typeof value.title === 'string' && value.title.trim() && value.title.length <= 80
+          && Array.isArray(value.entries) && [4, 8, 16, 32].includes(value.entries.length)
+          && value.entries.every((entry) => typeof entry === 'string' && entry.trim() && entry.length <= 60)
+          && new Set(value.entries.map((entry) => entry.trim().toLowerCase())).size === value.entries.length;
+        if (!valid) throw new Error('Provide a title and 4, 8, 16, or 32 unique contender names.');
+        if (new URLSearchParams(location.search).has('b')) throw new Error('Open the bracket builder before configuring a new bracket.');
+        setTitle(value.title.trim());
+        setEntries(value.entries.map((entry) => entry.trim()));
+        return { configured: true, contenders: value.entries.length };
+      },
+    }, { signal: lifecycle.signal })).catch(() => {});
+    return () => lifecycle.abort();
+  }, []);
+
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('b');
+    if (!id) return;
+    let active = true;
+    queueMicrotask(() => { if (active) setLoading(true); });
+    requestBracket(`/api/brackets/${encodeURIComponent(id)}`)
+      .then((result) => { if (active) setGame(result); })
+      .catch((error) => { if (active) setMessage(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!gameId) return;
+    const timer = setInterval(() => requestBracket(`/api/brackets/${encodeURIComponent(gameId)}`).then(setGame).catch(() => {}), 8000);
+    return () => clearInterval(timer);
+  }, [gameId]);
+
+  function applyKit() {
+    const kit = starterKits.find((item) => item.id === kitId);
+    if (!kit) return;
+    setTitle(kit.title);
+    setDescription(kit.description);
+    setEntries([...kit.entries]);
+    setMessage('Starter kit loaded. Edit any contender or shuffle before creating your bracket.');
+  }
+
+  function resize(size: number) {
+    setEntries(Array.from({ length: size }, (_, index) => entries[index] ?? ''));
+  }
+
+  function shuffle() {
+    setEntries((current) => {
+      const next = [...current];
+      for (let index = next.length - 1; index > 0; index--) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [next[index], next[swap]] = [next[swap], next[index]];
+      }
+      return next;
+    });
+  }
+
+  async function create() {
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await requestBracket('/api/brackets', { title, description, entries });
+      setGame(result);
+      history.pushState({}, '', `?b=${result.id}`);
+      setShareUrl(location.href);
+      setShare(true);
+      setPreview(false);
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function vote(match: number, pick: number) {
+    if (!game || busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      setGame(await requestBracket(`/api/brackets/${game.id}`, { action: 'vote', round: game.current, match, pick }));
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function advance() {
+    if (!game) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      setGame(await requestBracket(`/api/brackets/${game.id}`, { action: 'advance', round: game.current }));
+      setClose(false);
+    } catch (error) {
+      setMessage((error as Error).message);
+      setClose(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openShare() {
+    if (!game) return;
+    setShareUrl(`${location.origin}/?b=${game.id}`);
+    setShare(true);
+  }
+
+  const board = <BracketBoard key={`${game?.id ?? 'draft'}-${game?.current ?? 0}-${entries.length}`} game={game} entries={entries} title={title} busy={busy} onVote={vote} onShare={openShare} onAdvance={() => setClose(true)} />;
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <a className="brand" href="/"><span className="brand-symbol"><GitFork size={22} /></span>bracket<span className="brand-light">club</span><span className="brand-dot">®</span></a>
+        <span className="top-caption">A little competition. A lot of opinions.</span>
+        <button className="secondary small" onClick={() => { location.href = '/'; }}><Plus size={16} /> New bracket</button>
+      </header>
+      <main>
+        <div className="breadcrumb"><span>Your next great debate</span><span>/</span><span>{game ? 'The bracket' : 'Bracket builder'}</span></div>
+        <div className="page-heading"><div><h1>{game ? game.title : 'Big opinions. One winner.'}</h1><p>{game ? game.description : 'Pick the contenders. Rally your friends. Let the best one win.'}</p></div><span className="edition"><GitFork size={16} /> {game ? 'Voting room' : 'Make it a match'}</span></div>
+        {message && <output className="notice">{message}<button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></output>}
+        {loading ? <div className="loading">Opening your bracket…</div> : (
+          <div className={`workspace ${game ? 'voting-workspace' : 'builder-workspace'}`}>
+            <aside className="editor">
+              <div className="editor-header"><span className="step-number">{game ? <Users size={18} /> : '01'}</span><h2>{game ? 'The voting room' : 'Build your bracket'}</h2></div>
+              {game ? (
+                <div className="room-info">
+                  <span className="status-pill"><i />{game.champion ? 'Complete' : 'Voting is open'}</span>
+                  <h3>{game.champion ? 'We have a winner.' : roundName(game.rounds[game.current].length)}</h3>
+                  <p>{game.champion ? 'The votes are in. Your group has crowned a champion.' : 'Choose your favorite in each matchup. You can change your vote until the host closes the round.'}</p>
+                  <div className="room-stat"><strong>{game.total}</strong><span>votes across all rounds</span></div>
+                  <div className="desktop-room-actions"><button className="primary" onClick={openShare}><Link2 size={18} /> Invite friends</button>{game.owner && !game.champion && <button className="secondary" onClick={() => setClose(true)}>Close round & advance <ArrowRight size={16} /></button>}</div>
+                  <div className="tip"><LockKeyhole size={18} /><p>{game.owner ? 'You’re the host on this browser. Close each round when everyone has voted.' : 'The host closes each round and advances the winners.'}</p></div>
+                  <a className="text-link" href="/"><Plus size={16} /> Create your own bracket</a>
+                </div>
+              ) : (
+                <>
+                  <div className="starter-kit"><div className="field-label">Start with a kit <span>optional</span></div><Select value={kitId} onValueChange={(value) => { if (value) setKitId(value); }}><SelectTrigger className="size-select" aria-label="Starter kit"><SelectValue /></SelectTrigger><SelectContent>{starterKits.map((kit) => <SelectItem key={kit.id} value={kit.id}>{kit.label}</SelectItem>)}</SelectContent></Select><button className="secondary" onClick={applyKit}>Use this kit <ArrowRight size={16} /></button><p>Fills the title, size, and contenders. You can edit everything afterward.</p></div>
+                  <label className="field-label" htmlFor="title">Bracket title</label><input id="title" maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What are we deciding?" />
+                  <label className="field-label" htmlFor="description">A little context <span>optional</span></label><textarea id="description" maxLength={200} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Give your friends the backstory" />
+                  <div className="field-label">Bracket size</div><Select value={String(entries.length)} onValueChange={(value) => resize(Number(value))}><SelectTrigger className="size-select" aria-label="Bracket size"><SelectValue /></SelectTrigger><SelectContent>{[4, 8, 16, 32].map((size) => <SelectItem key={size} value={String(size)}>{size} contenders</SelectItem>)}</SelectContent></Select>
+                  <div className="entries-heading"><label className="field-label">The contenders <span>{entries.filter((entry) => entry.trim()).length}/{entries.length}</span></label><button className="text-link" onClick={shuffle}><Shuffle size={14} /> Shuffle</button></div>
+                  <div className="entry-list">{entries.map((entry, index) => <div className="entry-field" key={index}><span>{String(index + 1).padStart(2, '0')}</span><input aria-label={`Contender ${index + 1}`} maxLength={60} value={entry} placeholder={`Contender ${index + 1}`} onChange={(event) => setEntries(entries.map((value, item) => item === index ? event.target.value : value))} /></div>)}</div>
+                  <p className="editor-hint">{entries.length === 32 ? 'Entries 1–16 start on the left; 17–32 start on the right.' : 'Neighbors face off in the first round.'}</p>
+                  <button className="preview-trigger secondary" onClick={() => setPreview(true)}>Preview bracket <ArrowRight size={18} /></button>
+                  <button className="primary" disabled={busy || !title.trim() || entries.some((entry) => !entry.trim())} onClick={create}>{busy ? 'Creating…' : 'Create & invite friends'}<ArrowRight size={18} /></button>
+                  <p className="under-button">Your bracket goes live when you create it.</p>
+                </>
+              )}
+            </aside>
+            <div className="inline-board">{board}</div>
+          </div>
+        )}
+        <div className="bottom-note"><span><GitFork size={17} /> Built for the group chat.</span><p>{game ? 'Every vote brings you closer to a champion.' : 'Anything can be a bracket. Just bring your opinions.'}</p><span>Let the debate begin ↗</span></div>
+      </main>
+
+      <Sheet open={preview} onOpenChange={setPreview}><SheetContent side="right" className="preview-sheet"><SheetHeader><SheetTitle>Bracket preview</SheetTitle><SheetDescription>Check the opening matchups before you create it.</SheetDescription></SheetHeader><div className="preview-sheet-body"><BracketBoard key={`preview-${entries.length}`} game={null} entries={entries} title={title} busy={false} onVote={() => {}} onShare={() => {}} onAdvance={() => {}} preview /></div></SheetContent></Sheet>
+      <Dialog open={share} onOpenChange={setShare}><DialogContent className="share-dialog"><div className="dialog-icon"><Link2 /></div><DialogTitle>Bring the group chat.</DialogTitle><DialogDescription>Send this voting link to your friends. You control when each round ends from this browser.</DialogDescription><input aria-label="Voting link" readOnly value={shareUrl} onFocus={(event) => event.target.select()} /><button className="primary" onClick={async () => { try { await navigator.clipboard.writeText(shareUrl); setMessage('Voting link copied!'); setShare(false); } catch { setMessage('Select and copy the voting link.'); } }}>Copy voting link <Link2 size={16} /></button></DialogContent></Dialog>
+      <Dialog open={close} onOpenChange={setClose}><DialogContent><DialogTitle>Close this round?</DialogTitle><DialogDescription>Voting for this round will end. The most-voted contender in each matchup advances. Ties must be broken with more votes before you can advance. This cannot be undone.</DialogDescription><button className="primary" disabled={busy} onClick={advance}>{busy ? 'Advancing…' : 'Close round & advance'}</button><button className="secondary" onClick={() => setClose(false)}>Keep voting</button></DialogContent></Dialog>
+    </div>
+  );
+}
