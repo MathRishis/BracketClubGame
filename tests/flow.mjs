@@ -19,3 +19,16 @@ const done=await call('host',path,{action:'advance',round:1});assert.equal(done.
 await call('friend',path,{action:'vote',round:1,match:0,pick:0},409);
 await call('host','/api/brackets',{title:'Invalid',entries:['A','a','C','D']},400);
 console.log('PASS: creation, shared state, host authorization, vote changes, concurrent votes, ties, advancement, stale rounds, champion, input validation.');
+const large=await call('host','/api/brackets',{title:'32-entry tournament',entries:Array.from({length:32},(_,i)=>`Entry ${i+1}`)},201);
+const largePath='/api/brackets/'+large.id;
+let largeState=large;
+for(let round=0;round<5;round++){
+ const count=16/2**round;
+ assert.equal(largeState.rounds[round].length,count);
+ if(round<4){assert.equal(largeState.rounds[round][0].a,'Entry 1');assert.equal(largeState.rounds[round][count/2].a,'Entry 17');}
+ else {assert.equal(largeState.rounds[4][0].a,'Entry 1');assert.equal(largeState.rounds[4][0].b,'Entry 17');}
+ for(let match=0;match<count;match++)await call('friend',largePath,{action:'vote',round,match,pick:round===4?1:0});
+ largeState=await call('host',largePath,{action:'advance',round});
+}
+assert.equal(largeState.champion,'Entry 17');assert.equal(largeState.total,31);
+console.log('PASS: 32 contenders, independent 16-entry halves, five rounds, cross-side final, and champion.');

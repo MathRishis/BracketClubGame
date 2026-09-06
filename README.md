@@ -1,6 +1,6 @@
 # Bracket Club
 
-A shared bracket game with 4, 8, or 16 contenders, per-browser voting, host-controlled rounds, and durable D1 storage. Ties must receive more votes before advancing. Host access is held in an HTTP-only browser cookie; keep the creating browser's cookies to manage its brackets. Voting is intended for casual groups, not verified-person elections.
+A shared bracket game with 4, 8, 16, or 32 contenders, per-browser voting, host-controlled rounds, and durable D1 storage. Ties must receive more votes before advancing. Host access is held in an HTTP-only browser cookie; keep the creating browser's cookies to manage its brackets. Voting is intended for casual groups, not verified-person elections.
 
 ## Development
 
