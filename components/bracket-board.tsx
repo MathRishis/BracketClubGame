@@ -3,8 +3,9 @@
 import { useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, GitFork, Link2, Trophy } from 'lucide-react';
 
-export type MatchView = { a: string; b: string; votes: number[]; pick?: number; winner?: string };
-export type BracketView = { id: string; title: string; description: string; rounds: MatchView[][]; current: number; owner: boolean; champion?: string; total: number };
+export type BracketSettings = { mode: 'everyone' | 'two_groups'; visibility: 'shared' | 'worldwide'; accent: 'lime' | 'ocean' | 'sunset' | 'plum'; deadlineEnabled: boolean; deadlineAt?: number; minVotes: number; roundHours: number; extensionHours: number };
+export type MatchView = { a: string; b: string; votes: number[]; pick?: number; winner?: string; group?: 'A' | 'B' | null; canVote?: boolean };
+export type BracketView = { id: string; title: string; description: string; rounds: MatchView[][]; current: number; owner: boolean; champion?: string; total: number; settings: BracketSettings; viewerGroup?: 'A' | 'B' | null; groupStatus?: { group: 'A' | 'B'; voters: number; matchups: number }[]; createdAt?: number };
 
 type Props = {
   game: BracketView | null;
@@ -35,10 +36,12 @@ export function BracketBoard({ game, entries, title, busy, onVote, onShare, onAd
   const size = rounds[0].length * 2;
   const roundCount = Math.log2(size);
   const [phoneRound, setPhoneRound] = useState(game?.current ?? 0);
-  const [phoneSide, setPhoneSide] = useState<'left' | 'right'>('left');
+  const [phoneSide, setPhoneSide] = useState<'left' | 'right'>(game?.viewerGroup === 'B' ? 'right' : 'left');
   const tabletTrack = useRef<HTMLDivElement>(null);
 
   const shownPhoneRound = Math.min(phoneRound, roundCount - 1);
+  const phoneRoundMatches = size / 2 ** (shownPhoneRound + 1);
+  const phoneHasSides = phoneRoundMatches > 1 && (size === 32 || game?.settings.mode === 'two_groups');
 
   function renderRound(round: number, side?: 'left' | 'right', idPrefix = '') {
     const totalMatches = size / 2 ** (round + 1);
@@ -52,19 +55,21 @@ export function BracketBoard({ game, entries, title, busy, onVote, onShare, onAd
           {Array.from({ length: count }, (_, localIndex) => {
             const matchIndex = localIndex + offset;
             const match = rounds[round]?.[matchIndex];
+            const canVote = isOpen && (match?.canVote ?? true);
             return (
-              <div className={`match ${match ? '' : 'pending'}`} key={matchIndex}>
+              <div className={`match ${match ? '' : 'pending'} ${isOpen && !canVote ? 'watch-only' : ''}`} key={matchIndex}>
+                {match?.group && <span className={`match-group group-${match.group.toLowerCase()}`}>Group {match.group}</span>}
                 {[0, 1].map((pick) => {
                   const name = match ? (pick === 0 ? match.a : match.b) : 'Awaiting winner';
                   return (
-                    <button className={`contender ${match?.pick === pick ? 'picked ' : ''}${match?.winner === name ? 'won' : ''}`} disabled={!isOpen || busy || preview} key={pick} onClick={() => onVote(matchIndex, pick)} aria-label={isOpen ? `Vote for ${name}` : undefined}>
+                    <button className={`contender ${match?.pick === pick ? 'picked ' : ''}${match?.winner === name ? 'won' : ''}`} disabled={!canVote || busy || preview} key={pick} onClick={() => onVote(matchIndex, pick)} aria-label={canVote ? `Vote for ${name}` : undefined}>
                       <span className="seed">{round === 0 ? matchIndex * 2 + pick + 1 : <GitFork size={13} />}</span>
                       <span className="contender-name">{name}</span>
                       {game && match ? <span className="vote-count">{match.pick === pick && <Check size={13} />} {match.votes[pick]}</span> : <span className="empty-dot" />}
                     </button>
                   );
                 })}
-                {isOpen && !preview && <span className="match-note">{match?.pick !== undefined ? 'Your vote is in' : 'Tap to vote'}</span>}
+                {isOpen && !preview && <span className="match-note">{canVote ? (match?.pick !== undefined ? 'Your vote is in' : 'Tap to vote') : `Group ${match?.group} voting · watch live`}</span>}
               </div>
             );
           })}
@@ -89,15 +94,16 @@ export function BracketBoard({ game, entries, title, busy, onVote, onShare, onAd
   }
 
   return (
-    <section className={`board-panel ${preview ? 'preview-board' : ''}`} aria-label="Tournament bracket">
-      <div className="board-top"><div><span className={`status-pill ${game ? '' : 'draft'}`}><i />{game ? (game.champion ? 'Champion crowned' : 'Live bracket') : 'Live preview'}</span><h2>{game ? 'The road to a winner' : title || 'Your bracket'}</h2></div><div className="board-count"><span>{size} contenders</span><b>·</b><span>{roundCount} rounds</span><b>·</b><span>1 champion</span></div></div>
+    <section className={`board-panel theme-${game?.settings.accent ?? 'lime'} ${preview ? 'preview-board' : ''}`} aria-label="Tournament bracket">
+      <div className="board-top"><div><span className={`status-pill ${game ? '' : 'draft'}`}><i />{game ? (game.champion ? 'Champion crowned' : 'Live bracket') : 'Live preview'}</span><h2>{game ? 'The road to a winner' : title || 'Your bracket'}</h2>{game?.viewerGroup && <span className={`your-group group-${game.viewerGroup.toLowerCase()}`}>You’re in Group {game.viewerGroup}</span>}</div><div className="board-count"><span>{size} contenders</span><b>·</b><span>{roundCount} rounds</span><b>·</b><span>1 champion</span></div></div>
+      {game?.groupStatus && game.groupStatus.length > 0 && <div className="group-status-row">{game.groupStatus.map((status) => <div key={status.group}><span className={`group-dot group-${status.group.toLowerCase()}`} /> <strong>Group {status.group}</strong><span>{status.matchups ? `${status.voters} voters · ${status.matchups} matchups` : 'Finalists decided'}</span></div>)}</div>}
 
       <div className="phone-board">
         <div className="round-tabs" role="tablist" aria-label="Bracket rounds">
           {Array.from({ length: roundCount }, (_, round) => <button aria-current={shownPhoneRound === round ? 'page' : undefined} aria-selected={shownPhoneRound === round} className={shownPhoneRound === round ? 'active' : ''} key={round} onClick={() => setPhoneRound(round)} role="tab">{roundName(size / 2 ** (round + 1))}{game?.current === round && !game.champion && <i aria-label="Voting open" />}</button>)}
         </div>
-        {size === 32 && shownPhoneRound < 4 && <div className="side-switcher" aria-label="Bracket side"><button className={phoneSide === 'left' ? 'active' : ''} onClick={() => setPhoneSide('left')}>Left · 1–16</button><button className={phoneSide === 'right' ? 'active' : ''} onClick={() => setPhoneSide('right')}>Right · 17–32</button></div>}
-        <div className="phone-round" role="tabpanel">{renderRound(shownPhoneRound, size === 32 && shownPhoneRound < 4 ? phoneSide : undefined, 'phone')}</div>
+        {phoneHasSides && <div className="side-switcher" aria-label={game?.settings.mode === 'two_groups' ? 'Voting group' : 'Bracket side'}><button className={phoneSide === 'left' ? 'active' : ''} onClick={() => setPhoneSide('left')}>{game?.settings.mode === 'two_groups' ? 'Group A' : 'Left · 1–16'}</button><button className={phoneSide === 'right' ? 'active' : ''} onClick={() => setPhoneSide('right')}>{game?.settings.mode === 'two_groups' ? 'Group B' : 'Right · 17–32'}</button></div>}
+        <div className="phone-round" role="tabpanel">{renderRound(shownPhoneRound, phoneHasSides ? phoneSide : undefined, 'phone')}</div>
         <div className="round-pager"><button disabled={shownPhoneRound === 0} onClick={() => setPhoneRound((value) => Math.max(0, value - 1))}><ArrowLeft size={17} /> Previous</button><span>{shownPhoneRound + 1} of {roundCount}</span><button disabled={shownPhoneRound === roundCount - 1} onClick={() => setPhoneRound((value) => Math.min(roundCount - 1, value + 1))}>Next <ArrowRight size={17} /></button></div>
         {game && shownPhoneRound !== game.current && !game.champion && <button className="secondary go-live" onClick={() => setPhoneRound(game.current)}>Go to open voting <ArrowRight size={17} /></button>}
         {game?.champion && championCard(true)}

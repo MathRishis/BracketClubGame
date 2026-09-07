@@ -11,8 +11,12 @@ Bracket Club lets you create a tournament, share a voting link, and crown a cham
 - Phone-friendly round selection, left/right side selection, and large voting controls.
 - Shared votes stored in Cloudflare D1, with host-controlled round advancement.
 - One vote per matchup per browser, editable until the round closes. Ties need more votes before advancing.
+- Optional two-group games assign each voter to Group A or Group B. Each group votes on one half while both groups remain visible; everyone votes in the final.
+- Username/password accounts keep created brackets and voting history available across devices. Passwords use salted PBKDF2 hashes and sessions use HTTP-only cookies.
+- Worldwide brackets appear in the public discovery area and can use automatic round deadlines, minimum voter thresholds, and configurable extensions.
+- Creator controls include visibility, voting format, deadline rules, and four bracket color themes.
 
-Host access is held in an HTTP-only browser cookie. Keep the creating browser's cookies to manage its brackets. Voting is intended for casual groups, not verified-person elections.
+Anonymous host access remains in an HTTP-only browser cookie. Signed-in creators can manage their new brackets from any device. Voting is intended for casual groups, not verified-person elections.
 
 ## Development
 
@@ -22,6 +26,6 @@ The application runs on Cloudflare Workers with a D1 binding named `DB`. GitHub 
 
 ## Validation
 
-`node tests/flow.mjs` checks creation, shared state, authorization, vote changes, concurrent voting, ties, all five rounds of a 32-entry bracket, champion selection, starter kits, and input validation against a running local server.
+`node tests/flow.mjs` checks the original creation and voting flow. `node tests/features.mjs` checks accounts, durable ownership, voting history, two-group enforcement, worldwide discovery, customization, deadline extension, and automatic advancement against a running local server.
 
 The optional `configure_bracket` WebMCP tool is feature-detected. No supported WebMCP validation context was available during implementation, so its runtime contract was not verified. Browser UI testing was not requested.
