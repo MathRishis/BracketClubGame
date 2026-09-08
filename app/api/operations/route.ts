@@ -50,6 +50,80 @@ export async function POST(req: Request) {
       );
       return reply({ ok: true });
     }
+    // Cleanup is scoped to explicit release-verification IDs; it cannot repeat the global reset.
+    if (input.action === 'cleanup-verification') {
+      const accountIds = input.accountIds ?? [];
+      const bracketIds = input.bracketIds ?? [];
+      if (
+        !Array.isArray(accountIds) ||
+        !Array.isArray(bracketIds) ||
+        accountIds.length > 10 ||
+        bracketIds.length > 10 ||
+        [...accountIds, ...bracketIds].some(
+          (id) => typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id),
+        )
+      )
+        throw new UserError('Supply up to ten explicit IDs per type.');
+      for (const id of accountIds) {
+        const a = await database()
+          .prepare('SELECT username FROM accounts WHERE id=?')
+          .bind(id)
+          .first<{ username: string }>();
+        if (a && !/^release_[a-z0-9]+$/.test(a.username))
+          throw new UserError(
+            'Only release verification accounts may be removed.',
+            403,
+          );
+      }
+      for (const id of bracketIds) {
+        const b = await database()
+          .prepare('SELECT title FROM brackets WHERE id=?')
+          .bind(id)
+          .first<{ title: string }>();
+        if (b && b.title !== 'Release verification — private test')
+          throw new UserError(
+            'Only release verification brackets may be removed.',
+            403,
+          );
+      }
+      const statements = [];
+      for (const id of bracketIds) {
+        for (const table of [
+          'participation',
+          'notifications',
+          'reports',
+          'bracket_activity',
+        ])
+          statements.push(
+            database()
+              .prepare('DELETE FROM ' + table + ' WHERE bracket_id=?')
+              .bind(id),
+          );
+        statements.push(
+          database().prepare('DELETE FROM brackets WHERE id=?').bind(id),
+        );
+      }
+      for (const id of accountIds) {
+        for (const table of [
+          'notifications',
+          'reports',
+          'templates',
+          'community_accounts',
+          'sessions',
+          'bracket_activity',
+        ])
+          statements.push(
+            database()
+              .prepare('DELETE FROM ' + table + ' WHERE account_id=?')
+              .bind(id),
+          );
+        statements.push(
+          database().prepare('DELETE FROM accounts WHERE id=?').bind(id),
+        );
+      }
+      if (statements.length) await database().batch(statements);
+      return reply({ ok: true });
+    }
     if (input.action === 'assign-admin') {
       if (!input.accountId || !input.username)
         throw new UserError('Supply the new account ID and username.');
