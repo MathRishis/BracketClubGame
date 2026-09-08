@@ -170,6 +170,38 @@ export async function POST(req: Request) {
       return reply({ ok: true });
     }
     const id = text(input.id, 80);
+    if (input.action === 'delete-bracket') {
+      const owner = await database()
+        .prepare('SELECT owner FROM brackets WHERE id=?')
+        .bind(id)
+        .first<{ owner: string }>();
+      if (!owner)
+        throw new UserError('This bracket is no longer available.', 404);
+      if (owner.owner !== viewer)
+        throw new UserError('Only the creator can delete this bracket.', 403);
+      const result = await database().batch([
+        ...[
+          'participation',
+          'notifications',
+          'reports',
+          'bracket_activity',
+        ].map((table) =>
+          database()
+            .prepare(
+              'DELETE FROM ' +
+                table +
+                ' WHERE bracket_id=? AND EXISTS (SELECT 1 FROM brackets WHERE id=? AND owner=?)',
+            )
+            .bind(id, id, viewer),
+        ),
+        database()
+          .prepare('DELETE FROM brackets WHERE id=? AND owner=?')
+          .bind(id, viewer),
+      ]);
+      if (result[result.length - 1].meta.changes !== 1)
+        throw new UserError('The bracket changed. Refresh and try again.', 409);
+      return reply({ ok: true });
+    }
     const row = await read(id);
     const state = normalizeState(row.state);
     if (input.action === 'report') {

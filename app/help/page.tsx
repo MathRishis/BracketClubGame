@@ -11,7 +11,7 @@ const sections = [
   ],
   [
     'Drafts, kits & copies',
-    'Sign in to save drafts and reusable kits in your dashboard. Drafts do not accept votes. Launch a draft immediately or set an opening time. Duplicate a bracket to reuse its contenders and appearance with fresh votes and results. Edit contender details before the first vote; names and voting format then lock. Metadata edits on approved worldwide brackets return them to review.',
+    'Sign in to save drafts and reusable kits in your dashboard. Drafts do not accept votes. Launch a draft immediately or set an opening time. Duplicate a bracket to reuse its contenders and appearance with fresh votes and results. Edit contender details before the first vote; names and voting format then lock. Metadata edits on approved worldwide brackets return them to review. To permanently remove a bracket, choose Delete bracket under Your brackets in the creator dashboard and confirm. This removes all votes and results and disables the invite link; saved kits are kept.',
   ],
   [
     'Invite friends & vote',

@@ -5,9 +5,36 @@ import {
   EntryEditor,
   type EntryDetails,
 } from '@/components/community-controls';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+} from '@/components/ui/alert-dialog';
 import type { BracketView } from '@/components/bracket-board';
 type Summary = BracketView & { size: number };
 export default function Dashboard() {
+  const [deleting, setDeleting] = useState<Summary | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+  async function deleteBracket() {
+    if (!deleting) return;
+    setBusy(true);
+    setDeleteError('');
+    try {
+      await api('/api/community', {
+        action: 'delete-bracket',
+        id: deleting.id,
+      });
+      if (editing?.id === deleting.id) setEditing(null);
+      setDeleting(null);
+      setMessage('Bracket deleted. Its invite link is no longer available.');
+      await load();
+    } catch (e) {
+      setDeleteError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   const [data, setData] = useState<any>(null),
     [owned, setOwned] = useState<Summary[]>([]),
     [voted, setVoted] = useState<Summary[]>([]),
@@ -85,6 +112,36 @@ export default function Dashboard() {
           <a href="/help">Help</a>
         </nav>
       </header>
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(open) => {
+          if (!open && !busy) setDeleting(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete this bracket?</AlertDialogTitle>
+          <AlertDialogDescription>
+            “{deleting?.title}” and all its votes, results, and related
+            notifications will be permanently removed. Its invite link will stop
+            working. Saved kits are kept. This cannot be undone.
+          </AlertDialogDescription>
+          {deleteError && <p role="alert">{deleteError}</p>}
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => setDeleting(null)}
+          >
+            Keep bracket
+          </button>
+          <button
+            className="primary delete-bracket"
+            disabled={busy}
+            onClick={deleteBracket}
+          >
+            {busy ? 'Deleting…' : 'Permanently delete bracket'}
+          </button>
+        </AlertDialogContent>
+      </AlertDialog>
       <main className="community-main">
         <div className="page-heading">
           <div>
@@ -178,6 +235,16 @@ export default function Dashboard() {
                         <a className="secondary" href={`/?copy=${b.id}`}>
                           Duplicate
                         </a>
+                        <button
+                          className="secondary delete-bracket"
+                          disabled={busy}
+                          onClick={() => {
+                            setDeleting(b);
+                            setDeleteError('');
+                          }}
+                        >
+                          Delete bracket
+                        </button>
                         {!b.champion && (
                           <button
                             disabled={busy}

@@ -487,16 +487,16 @@ async function recordActivity(
   if (kind === 'voted')
     await database()
       .prepare(
-        'INSERT INTO participation (id,bracket_id,viewer,updated_at) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at',
+        'INSERT INTO participation (id,bracket_id,viewer,updated_at) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM brackets WHERE id=?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at',
       )
-      .bind(bracketId + ':' + viewer, bracketId, viewer, Date.now())
+      .bind(bracketId + ':' + viewer, bracketId, viewer, Date.now(), bracketId)
       .run();
   if (!viewer.startsWith('account:')) return;
   await database()
     .prepare(
-      `INSERT INTO bracket_activity (bracket_id,account_id,kind,updated_at) VALUES (?,?,?,?) ON CONFLICT(bracket_id,account_id,kind) DO UPDATE SET updated_at=excluded.updated_at`,
+      `INSERT INTO bracket_activity (bracket_id,account_id,kind,updated_at) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM brackets WHERE id=?) ON CONFLICT(bracket_id,account_id,kind) DO UPDATE SET updated_at=excluded.updated_at`,
     )
-    .bind(bracketId, viewer.slice(8), kind, Date.now())
+    .bind(bracketId, viewer.slice(8), kind, Date.now(), bracketId)
     .run();
 }
 export async function update(id: string, input: unknown, viewer: string) {
@@ -581,7 +581,7 @@ async function notify(row: Row, id: string, message: string, at: number) {
       recipients.results.map((r) =>
         database()
           .prepare(
-            'INSERT OR IGNORE INTO notifications (id,account_id,bracket_id,message,created_at,seen) VALUES (?,?,?,?,?,0)',
+            'INSERT OR IGNORE INTO notifications (id,account_id,bracket_id,message,created_at,seen) SELECT ?,?,?,?,?,0 WHERE EXISTS (SELECT 1 FROM brackets WHERE id=?)',
           )
           .bind(
             id + ':' + r.account_id,
@@ -589,6 +589,7 @@ async function notify(row: Row, id: string, message: string, at: number) {
             row.id,
             row.title + ': ' + message,
             at,
+            row.id,
           ),
       ),
     );
