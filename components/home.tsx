@@ -91,6 +91,26 @@ async function requestBracket(path: string, data?: unknown) {
 }
 
 export default function Home() {
+  const [savedKit, setSavedKit] = useState<string | null>(null);
+  const [savingKit, setSavingKit] = useState(false);
+  async function saveKit() {
+    if (savingKit) return;
+    setSavingKit(true);
+    try {
+      await api('/api/community', {
+        action: 'save-template',
+        title,
+        description,
+        entries,
+        contenders: details,
+      });
+      setSavedKit(title);
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setSavingKit(false);
+    }
+  }
   const [details, setDetails] = useState<EntryDetails[]>([]);
   const [category, setCategory] = useState('Other');
   const [worldQuery, setWorldQuery] = useState('');
@@ -936,22 +956,10 @@ export default function Home() {
                       </button>
                       <button
                         className="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          api('/api/community', {
-                            action: 'save-template',
-                            title,
-                            description,
-                            entries,
-                            contenders: details,
-                          })
-                            .then(() =>
-                              setMessage('Kit saved to your dashboard.'),
-                            )
-                            .catch((e) => setMessage(e.message))
-                        }
+                        disabled={busy || savingKit}
+                        onClick={saveKit}
                       >
-                        Save as kit
+                        {savingKit ? 'Saving kit…' : 'Save as kit'}
                       </button>
                     </div>
                   )}
@@ -1130,6 +1138,26 @@ export default function Home() {
           </div>
         </SheetContent>
       </Sheet>
+      <Dialog
+        open={savedKit !== null}
+        onOpenChange={(open) => {
+          if (!open) setSavedKit(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Kit saved!</DialogTitle>
+          <DialogDescription>
+            “{savedKit}” is saved to your kits. You can reuse it anytime from
+            your dashboard.
+          </DialogDescription>
+          <button className="primary" onClick={() => setSavedKit(null)}>
+            Done
+          </button>
+          <a className="secondary" href="/dashboard">
+            View saved kits
+          </a>
+        </DialogContent>
+      </Dialog>
       <Dialog open={share} onOpenChange={setShare}>
         <DialogContent className="share-dialog">
           <div className="dialog-icon">
